@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 )
 
 func main() {
@@ -12,8 +13,17 @@ func main() {
 		fmt.Printf("%v\n", err)
 	}
 
+	fmt.Print("=== INTERFACES ===\n")
 	for _, interfaceInfo := range interfaceInfos {
-		fmt.Printf("interface: %v ip: %v ipnet: %v broadcast: %v\n", interfaceInfo.Iface, interfaceInfo.IP, interfaceInfo.IPNet, interfaceInfo.Broadcast)
+		fmt.Printf("%v ip: %v ipnet: %v broadcast: %v\n", interfaceInfo.Iface, interfaceInfo.IP, interfaceInfo.IPNet, interfaceInfo.Broadcast)
+
+		msg := []byte("discovery: hello from " + interfaceInfo.IP.String())
+		fmt.Printf("broadcasting... %v\n", time.Now())
+		if err := broadcast(interfaceInfo, 9999, msg); err != nil {
+			fmt.Printf("broadcast error on interface: %v\n", err)
+		} else {
+			fmt.Printf("broadcast success!\n")
+		}
 	}
 }
 
@@ -71,4 +81,19 @@ func broadcastInterfaces() ([]InterfaceInfo, error) {
 	}
 
 	return out, nil
+}
+
+func broadcast(interfaceInfo InterfaceInfo, port int, payload []byte) error {
+	listenAddr := &net.UDPAddr{IP: interfaceInfo.IP, Port: 0} //port is set to 0, so it can be automatically chosen when creating a Listen UDPConn
+	relayAddr := &net.UDPAddr{IP: interfaceInfo.Broadcast, Port: port}
+
+	conn, err := net.ListenUDP("udp4", listenAddr)
+	if err != nil {
+		return fmt.Errorf("ListenUDP on %s: %w", interfaceInfo.IP, err)
+	}
+	defer conn.Close()
+
+	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	_, err = conn.WriteToUDP(payload, relayAddr)
+	return err
 }
