@@ -19,7 +19,15 @@ const (
 	EchoPort         = 40000 //probe port (UDP echo)
 )
 
+var (
+	HostName = "HOST_NAME"
+	HostId   = "HOST_ID"
+)
+
 func main() {
+	HostName = os.Getenv("HOST_NAME")
+	HostId = os.Getenv("HOST_ID")
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -39,11 +47,10 @@ func main() {
 
 	<-ctx.Done()
 	fmt.Println("exiting...")
-
 }
 
 func mustUDPListen(ip netip.Addr, port int) *net.UDPConn {
-	listenAddr := &net.UDPAddr{IP: net.IP(ip.AsSlice()), Port: port}
+	listenAddr := &net.UDPAddr{IP: net.IPv4zero, Port: port}
 	conn, err := net.ListenUDP("udp4", listenAddr)
 	if err != nil {
 		panic(err)
@@ -52,7 +59,7 @@ func mustUDPListen(ip netip.Addr, port int) *net.UDPConn {
 }
 
 func listenLoop(ctx context.Context, conn *net.UDPConn) {
-	buffer := make([]byte, 1500)
+	buffer := make([]byte, 1024)
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		n, _, err := conn.ReadFromUDP((buffer))
@@ -65,17 +72,21 @@ func listenLoop(ctx context.Context, conn *net.UDPConn) {
 			}
 		}
 		if err != nil {
-			return
+			fmt.Printf("error: %v\n", err)
+			continue
 		}
 
 		announce, err := wire.Decode(buffer[:n])
 		if err != nil {
+			fmt.Printf("error: %v\n", err)
 			continue
 		}
 
-		if announce.ID == "HOST_ID" {
+		if announce.ID == HostId {
+			fmt.Printf("error: announce.Id == HostId\n")
 			continue
 		}
+
 		fmt.Printf("announce from %s %s:%d (%s)\n", announce.ID, announce.Addr, announce.UDPPort, announce.Name)
 	}
 }
@@ -84,8 +95,8 @@ func announceLoop(ctx context.Context, interfaces []netx.InterfaceInfo) {
 	t := time.NewTicker(AnnounceInterval)
 	defer t.Stop()
 	announce := wire.Announce{
-		ID:      "HOST_ID",
-		Name:    "HOST_NAME",
+		ID:      HostId,
+		Name:    HostName,
 		UDPPort: EchoPort,
 		Version: "0.1",
 	}
@@ -99,13 +110,15 @@ func announceLoop(ctx context.Context, interfaces []netx.InterfaceInfo) {
 				a := announce
 				a.Addr = iface.IP
 				packet, _ := wire.Encode(a)
-				remoteAddress := &net.UDPAddr{IP: net.IP(iface.Broadcast.AsSlice()), Port: AnnouncePort}
-				listenAddress := &net.UDPAddr{IP: net.IP(iface.IP.AsSlice()), Port: 0}
+				remoteAddress := &net.UDPAddr{IP: iface.Broadcast.AsSlice(), Port: AnnouncePort}
+				listenAddress := &net.UDPAddr{IP: iface.IP.AsSlice(), Port: 0}
 				conn, err := net.ListenUDP("udp4", listenAddress)
 
 				if err != nil {
+					fmt.Printf("err: %v\n", err)
 					continue
 				}
+
 				_, _ = conn.WriteToUDP(packet, remoteAddress)
 				conn.Close()
 			}
