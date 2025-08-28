@@ -1,0 +1,28 @@
+services:
+  node1:
+    container_name: node1
+    build: .
+    environment:
+      HOST_NAME: "host1"
+      HOST_ID: "id1"
+    networks:
+      - lanpeerdiscoverynet
+  node2:
+    container_name: node2
+    build: .
+    environment:
+      HOST_NAME: "host2"
+      HOST_ID: "id2"
+    networks:
+      - lanpeerdiscoverynet
+  node3:
+    container_name: node3
+    build: .
+    environment:
+      HOST_NAME: "host3"
+      HOST_ID: "id3"
+    networks:
+      - lanpeerdiscoverynet
+networks:
+  lanpeerdiscoverynet:
+    driver: bridge
