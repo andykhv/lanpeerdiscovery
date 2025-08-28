@@ -1,6 +1,8 @@
 package table
 
 import (
+	"context"
+	"fmt"
 	"net/netip"
 	"time"
 )
@@ -23,7 +25,7 @@ type Peer struct {
 	Status    Status
 }
 
-type Ann struct {
+type Announce struct {
 	ID      string
 	Address netip.AddrPort
 }
@@ -41,7 +43,7 @@ type ProbeResponse struct {
 }
 
 type Bus struct {
-	AnnounceCh      chan Ann
+	AnnounceCh      chan Announce
 	ProbeRequestCh  chan ProbeRequest
 	ProbeResponseCh chan ProbeResponse
 }
@@ -57,7 +59,7 @@ type Config struct {
 	ProbeEvery time.Duration
 }
 
-func (t *Table) Loop(bus *Bus, cfg Config, now func() time.Time) {
+func (t *Table) Loop(ctx context.Context, bus *Bus, cfg Config, now func() time.Time) {
 	tickProbe := time.NewTicker(cfg.ProbeEvery)
 	tickMaintenance := time.NewTicker((time.Second))
 	defer tickProbe.Stop()
@@ -66,6 +68,7 @@ func (t *Table) Loop(bus *Bus, cfg Config, now func() time.Time) {
 	for {
 		select {
 		case a := <-bus.AnnounceCh:
+			fmt.Printf("announceCh\n")
 			peer := t.Peers[a.ID]
 			if peer == nil {
 				peer = &Peer{ID: a.ID}
@@ -73,6 +76,7 @@ func (t *Table) Loop(bus *Bus, cfg Config, now func() time.Time) {
 			}
 			peer.Address = a.Address
 			peer.LastSeen = now()
+			fmt.Printf("announce hit table: %v %v\n", peer.ID, peer.LastSeen)
 		case r := <-bus.ProbeResponseCh:
 			if peer := t.Peers[r.ID]; peer != nil {
 				peer.LastProbe = r.When
@@ -99,6 +103,8 @@ func (t *Table) Loop(bus *Bus, cfg Config, now func() time.Time) {
 					peer.Status = Suspect
 				}
 			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
