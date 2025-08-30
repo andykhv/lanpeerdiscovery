@@ -59,7 +59,6 @@ func main() {
 
 	conn := mustUDPListen(AnnouncePort)
 	go listenLoop(ctx, conn, bus)
-
 	go announceLoop(ctx, interfaceInfos)
 
 	//go startEchoServer(EchoPort)
