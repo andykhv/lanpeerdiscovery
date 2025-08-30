@@ -2,7 +2,6 @@ package table
 
 import (
 	"context"
-	"fmt"
 	"net/netip"
 	"time"
 )
@@ -68,7 +67,6 @@ func (t *Table) Loop(ctx context.Context, bus *Bus, cfg Config, now func() time.
 	for {
 		select {
 		case a := <-bus.AnnounceCh:
-			fmt.Printf("announceCh\n")
 			peer := t.Peers[a.ID]
 			if peer == nil {
 				peer = &Peer{ID: a.ID}
@@ -76,7 +74,6 @@ func (t *Table) Loop(ctx context.Context, bus *Bus, cfg Config, now func() time.
 			}
 			peer.Address = a.Address
 			peer.LastSeen = now()
-			fmt.Printf("announce hit table: %v %v\n", peer.ID, peer.LastSeen)
 		case r := <-bus.ProbeResponseCh:
 			if peer := t.Peers[r.ID]; peer != nil {
 				peer.LastProbe = r.When
@@ -86,6 +83,7 @@ func (t *Table) Loop(ctx context.Context, bus *Bus, cfg Config, now func() time.
 				}
 			}
 		case <-tickProbe.C:
+			continue // TODO: implement handling ProbeRequestCh
 			for _, peer := range t.Peers {
 				if now().Sub(peer.LastSeen) <= cfg.DownAfter {
 					bus.ProbeRequestCh <- ProbeRequest{ID: peer.ID, Address: peer.Address}

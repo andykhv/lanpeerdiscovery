@@ -16,8 +16,8 @@ import (
 
 const (
 	AnnounceInterval = 2 * time.Second
-	AnnouncePort     = 39999 //broadcast/listen port
-	EchoPort         = 40000 //probe port (UDP echo)
+	AnnouncePort     = 8291 //broadcast/listen port
+	EchoPort         = 9125 //probe port (UDP echo)
 )
 
 var (
@@ -80,7 +80,6 @@ func mustUDPListen(port int) *net.UDPConn {
 func listenLoop(ctx context.Context, conn *net.UDPConn, bus *table.Bus) {
 	buffer := make([]byte, 1024)
 	for {
-		log.Printf("listening\n")
 		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		n, _, err := conn.ReadFromUDP((buffer))
 		if ne, ok := err.(net.Error); ok && ne.Timeout() {
@@ -139,7 +138,6 @@ func announceLoop(ctx context.Context, interfaces []netx.InterfaceInfo) {
 					continue
 				}
 
-				log.Printf("announcing %v \n", remoteAddress)
 				_, _ = conn.WriteToUDP(packet, remoteAddress)
 				conn.Close()
 			}
