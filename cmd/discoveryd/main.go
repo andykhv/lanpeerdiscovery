@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/andykhv/lanpeerdiscovery/internal/netx"
+	"github.com/andykhv/lanpeerdiscovery/internal/probe"
 	"github.com/andykhv/lanpeerdiscovery/internal/table"
 	"github.com/andykhv/lanpeerdiscovery/internal/wire"
 )
@@ -18,6 +19,7 @@ const (
 	AnnounceInterval = 2 * time.Second
 	AnnouncePort     = 8291 //broadcast/listen port
 	EchoPort         = 9125 //probe port (UDP echo)
+	Workers          = 5
 )
 
 var (
@@ -60,8 +62,8 @@ func main() {
 	conn := mustUDPListen(AnnouncePort)
 	go listenLoop(ctx, conn, bus)
 	go announceLoop(ctx, interfaceInfos)
-
-	//go startEchoServer(EchoPort)
+	go probe.StartEchoServer(ctx, EchoPort)
+	startProbeWorkerPool(ctx, Workers, bus)
 
 	<-ctx.Done()
 	log.Println("exiting...")
@@ -104,7 +106,6 @@ func listenLoop(ctx context.Context, conn *net.UDPConn, bus *table.Bus) {
 			continue
 		}
 
-		log.Printf("announce from %s %s:%d (%s)\n", announce.ID, announce.Addr, announce.UDPPort, announce.Name)
 		bus.AnnounceCh <- table.Announce{ID: announce.ID, Address: netip.AddrPortFrom(announce.Addr, uint16(announce.UDPPort))}
 	}
 }
@@ -140,6 +141,30 @@ func announceLoop(ctx context.Context, interfaces []netx.InterfaceInfo) {
 				_, _ = conn.WriteToUDP(packet, remoteAddress)
 				conn.Close()
 			}
+		}
+	}
+}
+
+func startProbeWorkerPool(ctx context.Context, workers int, bus *table.Bus) {
+	for range workers {
+		go probeWorker(ctx, bus)
+	}
+}
+
+func probeWorker(ctx context.Context, bus *table.Bus) {
+	for {
+		select {
+		case request := <-bus.ProbeRequestCh:
+			duration, success := probe.Probe(request.Address)
+			resp := table.ProbeResponse{ID: request.ID, OK: success, RTT: duration, When: time.Now()}
+
+			select {
+			case bus.ProbeResponseCh <- resp:
+			case <-ctx.Done():
+				return
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

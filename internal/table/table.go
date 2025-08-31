@@ -83,7 +83,6 @@ func (t *Table) Loop(ctx context.Context, bus *Bus, cfg Config, now func() time.
 				}
 			}
 		case <-tickProbe.C:
-			continue // TODO: implement handling ProbeRequestCh
 			for _, peer := range t.Peers {
 				if now().Sub(peer.LastSeen) <= cfg.DownAfter {
 					bus.ProbeRequestCh <- ProbeRequest{ID: peer.ID, Address: peer.Address}

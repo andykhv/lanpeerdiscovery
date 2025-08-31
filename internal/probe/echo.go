@@ -1,31 +1,43 @@
 package probe
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"time"
 )
 
-func StartEchoServer(port int) error {
-	addr := &net.UDPAddr{IP: net.IPv4zero, Port: port}
-	conn, err := net.ListenUDP("udp4", addr)
-
+func StartEchoServer(ctx context.Context, port int) error {
+	laddr := &net.UDPAddr{IP: net.IPv4zero, Port: port}
+	conn, err := net.ListenUDP("udp4", laddr)
 	if err != nil {
 		return err
 	}
 
+	defer conn.Close()
+
 	go func() {
-		buf := make([]byte, 2048)
-		for {
-			n, addr, err := conn.ReadFromUDP(buf)
-			if err != nil {
-				return
-			}
-			conn.WriteToUDP(buf[:n], addr)
-		}
+		<-ctx.Done()
+		conn.SetReadDeadline(time.Now())
+		conn.Close()
 	}()
 
-	return nil
+	buf := make([]byte, 2048)
+	for {
+		n, raddr, err := conn.ReadFromUDPAddrPort(buf)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		if _, err := conn.WriteToUDPAddrPort(buf[:n], raddr); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+	}
 }
 
 func Probe(addr netip.AddrPort) (time.Duration, bool) {
