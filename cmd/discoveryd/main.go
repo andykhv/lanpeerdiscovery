@@ -25,6 +25,7 @@ const (
 	AnnouncePort     = 8291 //broadcast and listen
 	EchoPort         = 9125 //probe (UDP echo)
 	Workers          = 5
+	CleanupInterval  = 45 * time.Second
 )
 
 var (
@@ -56,6 +57,7 @@ func main() {
 	}
 	t := &table.Table{
 		Peers: map[string]*table.Peer{},
+		Seen:  table.SeenCache{},
 	}
 	bus := &table.Bus{
 		AnnounceCh:          make(chan table.Announce),
@@ -76,10 +78,11 @@ func main() {
 	go t.Loop(ctx, bus, cfg, time.Now)
 
 	conn := mustUDPListen(AnnouncePort)
-	go listenLoop(ctx, conn, bus)
+	go listenLoop(ctx, conn, bus, t.Seen)
 	go announceLoop(ctx, interfaceInfos, privateKey)
 	go probe.StartEchoServer(ctx, EchoPort)
 	startProbeWorkerPool(ctx, Workers, bus)
+	go initCleanupJob(ctx, CleanupInterval, t.Seen)
 	server.StartHttpServer(ctx, HttpPort, bus)
 
 	<-ctx.Done()
@@ -95,7 +98,7 @@ func mustUDPListen(port int) *net.UDPConn {
 	return conn
 }
 
-func listenLoop(ctx context.Context, conn *net.UDPConn, bus *table.Bus) {
+func listenLoop(ctx context.Context, conn *net.UDPConn, bus *table.Bus, seenCache table.SeenCache) {
 	buffer := make([]byte, 1024)
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -125,6 +128,10 @@ func listenLoop(ctx context.Context, conn *net.UDPConn, bus *table.Bus) {
 			log.Println("error: invalid signature")
 			continue
 		}
+		if seenCache.Seen(announce.ID, announce.Nonce) {
+			continue
+		}
+		seenCache.Add(announce.ID, announce.Nonce, time.Now().Add(EvictAfter))
 
 		// Freshness: reject very old/future packets
 		const maxSkew = 10 * time.Second
@@ -199,6 +206,20 @@ func probeWorker(ctx context.Context, bus *table.Bus) {
 				return
 			}
 		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func initCleanupJob(ctx context.Context, interval time.Duration, seen table.SeenCache) {
+	ticker := time.NewTicker(interval)
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			seen.Cleanup(now)
+		case <-ctx.Done():
+			ticker.Stop()
 			return
 		}
 	}

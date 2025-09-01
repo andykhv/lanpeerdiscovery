@@ -57,9 +57,11 @@ type Bus struct {
 	ListPeersResponseCh chan ListPeersResponse
 }
 
+type SeenCache map[string]map[[12]byte]time.Time // ID -> nonce -> time
+
 type Table struct {
 	Peers map[string]*Peer
-	// Seen  map[string]map[[12]byte]time.Time // ID -> nonce -> time
+	Seen  SeenCache
 }
 
 type Config struct {
@@ -126,4 +128,38 @@ func (t *Table) Loop(ctx context.Context, bus *Bus, cfg Config, now func() time.
 			return
 		}
 	}
+}
+
+func (s SeenCache) Cleanup(threshold time.Time) {
+	for id, nonces := range s {
+		for nonce, when := range nonces {
+			if when.Before(threshold) {
+				delete(nonces, nonce)
+			}
+		}
+		if len(nonces) == 0 {
+			delete(s, id)
+		}
+	}
+}
+
+func (s SeenCache) Seen(id string, nonce [12]byte) bool {
+	if s[id] == nil {
+		return false
+	}
+
+	if len(nonce) == 0 {
+		return false
+	}
+
+	_, ok := s[id][nonce]
+	return ok
+}
+
+func (s SeenCache) Add(id string, nonce [12]byte, expiration time.Time) {
+	if s[id] == nil || len(nonce) == 0 {
+		return
+	}
+
+	s[id][nonce] = expiration
 }
