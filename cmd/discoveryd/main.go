@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"log"
 	"net"
 	"net/netip"
@@ -36,8 +39,9 @@ var (
 
 func main() {
 	HostName = os.Getenv("HOST_NAME")
-	HostId = os.Getenv("HOST_ID")
 	port, err := strconv.Atoi(os.Getenv("HTTP_PORT"))
+	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	HostId = hex.EncodeToString(publicKey)
 
 	if err != nil {
 		log.Println(err.Error())
@@ -73,7 +77,7 @@ func main() {
 
 	conn := mustUDPListen(AnnouncePort)
 	go listenLoop(ctx, conn, bus)
-	go announceLoop(ctx, interfaceInfos)
+	go announceLoop(ctx, interfaceInfos, privateKey)
 	go probe.StartEchoServer(ctx, EchoPort)
 	startProbeWorkerPool(ctx, Workers, bus)
 	server.StartHttpServer(ctx, HttpPort, bus)
@@ -114,23 +118,33 @@ func listenLoop(ctx context.Context, conn *net.UDPConn, bus *table.Bus) {
 			log.Printf("error: %v\n", err)
 			continue
 		}
-
 		if announce.ID == HostId {
 			continue
+		}
+		if !announce.Verify() {
+			log.Println("error: invalid signature")
+			continue
+		}
+
+		// Freshness: reject very old/future packets
+		const maxSkew = 10 * time.Second
+		delta := time.Since(time.UnixMilli(announce.EpochMS))
+		if delta > maxSkew || delta < -maxSkew {
+			continue // stale or clock-skewed
 		}
 
 		bus.AnnounceCh <- table.Announce{ID: announce.ID, Address: netip.AddrPortFrom(announce.Addr, uint16(announce.UDPPort))}
 	}
 }
 
-func announceLoop(ctx context.Context, interfaces []netx.InterfaceInfo) {
+func announceLoop(ctx context.Context, interfaces []netx.InterfaceInfo, privateKey ed25519.PrivateKey) {
 	t := time.NewTicker(AnnounceInterval)
 	defer t.Stop()
 	announce := wire.Announce{
-		ID:      HostId,
+		ID:      "",
 		Name:    HostName,
 		UDPPort: EchoPort,
-		Version: "0.1",
+		Version: "0.2",
 	}
 
 	for {
@@ -141,6 +155,14 @@ func announceLoop(ctx context.Context, interfaces []netx.InterfaceInfo) {
 			for _, iface := range interfaces {
 				a := announce
 				a.Addr = iface.IP
+				a.EpochMS = time.Now().UnixMilli()
+
+				if _, err := rand.Read(announce.Nonce[:]); err != nil {
+					log.Fatal("cannot read random:", err)
+				}
+
+				a.Sign(privateKey)
+
 				packet, _ := wire.Encode(a)
 				remoteAddress := &net.UDPAddr{IP: iface.Broadcast.AsSlice(), Port: AnnouncePort}
 				listenAddress := &net.UDPAddr{IP: iface.IP.AsSlice(), Port: 0}

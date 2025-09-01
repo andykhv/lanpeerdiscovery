@@ -59,6 +59,7 @@ type Bus struct {
 
 type Table struct {
 	Peers map[string]*Peer
+	// Seen  map[string]map[[12]byte]time.Time // ID -> nonce -> time
 }
 
 type Config struct {
