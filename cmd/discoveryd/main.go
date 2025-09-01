@@ -129,6 +129,7 @@ func listenLoop(ctx context.Context, conn *net.UDPConn, bus *table.Bus, seenCach
 			continue
 		}
 		if seenCache.Seen(announce.ID, announce.Nonce) {
+			log.Println("error: duplicate announce")
 			continue
 		}
 		seenCache.Add(announce.ID, announce.Nonce, time.Now().Add(EvictAfter))
