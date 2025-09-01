@@ -41,10 +41,20 @@ type ProbeResponse struct {
 	When time.Time
 }
 
+type ListPeersRequest struct {
+}
+
+type ListPeersResponse struct {
+	When  time.Time
+	Peers []Peer
+}
+
 type Bus struct {
-	AnnounceCh      chan Announce
-	ProbeRequestCh  chan ProbeRequest
-	ProbeResponseCh chan ProbeResponse
+	AnnounceCh          chan Announce
+	ProbeRequestCh      chan ProbeRequest
+	ProbeResponseCh     chan ProbeResponse
+	ListPeersRequestCh  chan ListPeersRequest
+	ListPeersResponseCh chan ListPeersResponse
 }
 
 type Table struct {
@@ -100,6 +110,17 @@ func (t *Table) Loop(ctx context.Context, bus *Bus, cfg Config, now func() time.
 					peer.Status = Suspect
 				}
 			}
+		case <-bus.ListPeersRequestCh:
+			peers := make([]Peer, 0, len(t.Peers))
+			for _, p := range t.Peers {
+				peers = append(peers, *p)
+			}
+
+			response := ListPeersResponse{
+				When:  time.Now(),
+				Peers: peers,
+			}
+			bus.ListPeersResponseCh <- response
 		case <-ctx.Done():
 			return
 		}

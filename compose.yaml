@@ -5,6 +5,9 @@ services:
     environment:
       HOST_NAME: "host1"
       HOST_ID: "id1"
+      HTTP_PORT: 8080
+    ports:
+      - "8080:8080"
     networks:
       - lanpeerdiscoverynet
   node2:
@@ -13,6 +16,9 @@ services:
     environment:
       HOST_NAME: "host2"
       HOST_ID: "id2"
+      HTTP_PORT: 8081
+    ports:
+      - "8081:8081"
     networks:
       - lanpeerdiscoverynet
   node3:
@@ -21,6 +27,9 @@ services:
     environment:
       HOST_NAME: "host3"
       HOST_ID: "id3"
+      HTTP_PORT: 8082
+    ports:
+      - "8082:8082"
     networks:
       - lanpeerdiscoverynet
 networks:

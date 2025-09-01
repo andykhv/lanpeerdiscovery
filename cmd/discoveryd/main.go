@@ -7,24 +7,27 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	"github.com/andykhv/lanpeerdiscovery/internal/netx"
 	"github.com/andykhv/lanpeerdiscovery/internal/probe"
+	"github.com/andykhv/lanpeerdiscovery/internal/server"
 	"github.com/andykhv/lanpeerdiscovery/internal/table"
 	"github.com/andykhv/lanpeerdiscovery/internal/wire"
 )
 
 const (
 	AnnounceInterval = 2 * time.Second
-	AnnouncePort     = 8291 //broadcast/listen port
-	EchoPort         = 9125 //probe port (UDP echo)
+	AnnouncePort     = 8291 //broadcast and listen
+	EchoPort         = 9125 //probe (UDP echo)
 	Workers          = 5
 )
 
 var (
 	HostName   = "HOST_NAME"
 	HostId     = "HOST_ID"
+	HttpPort   = 8080 //http server
 	StaleAfter = 5000 * time.Millisecond
 	DownAfter  = 10000 * time.Millisecond
 	EvictAfter = 20000 * time.Millisecond
@@ -34,6 +37,13 @@ var (
 func main() {
 	HostName = os.Getenv("HOST_NAME")
 	HostId = os.Getenv("HOST_ID")
+	port, err := strconv.Atoi(os.Getenv("HTTP_PORT"))
+
+	if err != nil {
+		log.Println(err.Error())
+	}
+
+	HttpPort = port
 	cfg := table.Config{
 		StaleAfter: StaleAfter,
 		DownAfter:  DownAfter,
@@ -44,9 +54,11 @@ func main() {
 		Peers: map[string]*table.Peer{},
 	}
 	bus := &table.Bus{
-		AnnounceCh:      make(chan table.Announce),
-		ProbeRequestCh:  make(chan table.ProbeRequest),
-		ProbeResponseCh: make(chan table.ProbeResponse),
+		AnnounceCh:          make(chan table.Announce),
+		ProbeRequestCh:      make(chan table.ProbeRequest),
+		ProbeResponseCh:     make(chan table.ProbeResponse),
+		ListPeersRequestCh:  make(chan table.ListPeersRequest),
+		ListPeersResponseCh: make(chan table.ListPeersResponse),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -64,6 +76,7 @@ func main() {
 	go announceLoop(ctx, interfaceInfos)
 	go probe.StartEchoServer(ctx, EchoPort)
 	startProbeWorkerPool(ctx, Workers, bus)
+	server.StartHttpServer(ctx, HttpPort, bus)
 
 	<-ctx.Done()
 	log.Println("exiting...")
